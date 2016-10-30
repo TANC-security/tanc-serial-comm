@@ -1,5 +1,6 @@
 #!/bin/bash
 PACKAGE_ROOT=build/deb/tanc-serial-comm
+rm -Rf $PACKAGE_ROOT
 mkdir -p $PACKAGE_ROOT/DEBIAN/
 mkdir -p $PACKAGE_ROOT/opt/tanc/serial-comm/vendor/
 mkdir -p $PACKAGE_ROOT/opt/tanc/systemd/
