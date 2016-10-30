@@ -4,11 +4,25 @@ set_time_limit(0);
 @ob_end_flush();
 ob_implicit_flush(true);
 
-include_once(dirname(__DIR__).'/vendor/autoload.php');
+include_once(dirname(__DIR__).'/serial-comm/vendor/autoload.php');
 
-$serialPort = '/dev/ttyAMA0';
-if (!file_exists($serialPort)) {
-	$serialPort = '/dev/ttyUSB0';
+$amaPort = '/dev/ttyAMA';
+$usbPort = '/dev/ttyUSB';
+$serialPort = FALSE;
+for ($x =0; $x <=10; $x++) {
+	if (file_exists($amaPort.$x)) {
+		$serialPort = $amaPort.$x;
+		break;
+	}
+	if (file_exists($usbPort.$x)) {
+		$serialPort = $usbPort.$x;
+		break;
+	}
+}
+if (!$serialPort) {
+	echo "No serial port found at /dev/ttyAMA* nor /dev/ttyUSB*\n";
+	sleep (30);
+	exit();
 }
 
 `stty -F $serialPort cs8 115200 ignbrk -brkint -imaxbel -opost -onlcr -isig -icanon -iexten -echo -echoe -echok -echoctl -echoke noflsh -ixon -crtscts`;
