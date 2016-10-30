@@ -4,6 +4,9 @@
 		"type": "vcs",
 		"url": "https://github.com/markkimsal/beanstalk.git"
 	}],
+    "config": {
+        "vendor-dir": "serial-comm/vendor"
+    },
     "require": {
         "markkimsal/beanstalk": "^0.2.0"
     }
