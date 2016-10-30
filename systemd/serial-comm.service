@@ -1,0 +1,14 @@
+[Unit]
+Description=TANC Serial Queue Service
+After=multi-user.target
+
+[Service]
+Type=idle
+User=pi
+Group=users
+WorkingDirectory=/otp/tanc/
+ExecStart=/usr/bin/php /opt/tanc/bin/serial-comm.php
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
