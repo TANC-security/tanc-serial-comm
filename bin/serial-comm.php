@@ -35,7 +35,7 @@ if (!$serialHandle) {
 Amp\run(function () use ($serialHandle) {
 	$outbuffer = '';
 	$settled   = FALSE;
-	$client = new Amp\Beanstalk\BeanstalkClient('172.17.0.12:11300');
+	$client = new Amp\Beanstalk\BeanstalkClient('127.0.0.1:11300');
 
 /*
 	$prom1 = $client->useTube('error');
