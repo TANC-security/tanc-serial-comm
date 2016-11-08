@@ -6,7 +6,7 @@ After=multi-user.target
 Type=idle
 User=pi
 Group=users
-WorkingDirectory=/otp/tanc/
+WorkingDirectory=/opt/tanc/
 ExecStart=/usr/bin/php /opt/tanc/bin/serial-comm.php
 Restart=on-failure
 
