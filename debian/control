@@ -3,6 +3,6 @@ Version: 0.1
 Maintainer: Mark Kimsal <mark@igotaprinter.com>
 Priority: optional
 Build-Depends: devscripts (>= 2)
-Architecture: any
+Architecture: all
 Depends: beanstalkd, php7.0-cli
 Description: TANC serial communication
