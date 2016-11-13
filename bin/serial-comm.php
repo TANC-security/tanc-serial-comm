@@ -20,7 +20,7 @@ for ($x =0; $x <=10; $x++) {
 	}
 }
 if (!$serialPort) {
-	echo "No serial port found at /dev/ttyAMA* nor /dev/ttyUSB*\n";
+	echo "E/Serial: No serial port found at /dev/ttyAMA* nor /dev/ttyUSB*\n";
 	sleep (30);
 	exit();
 }
@@ -29,7 +29,7 @@ if (!$serialPort) {
 
 @$serialHandle = fopen($serialPort, "w+", false);
 if (!$serialHandle) { 
-	echo "ERROR: cannot open serial port $serialPort for reading and writing.\n";
+	echo "E/Serial: cannot open serial port $serialPort for reading and writing.\n";
 }
 
 Amp\run(function () use ($serialHandle) {
@@ -59,7 +59,7 @@ Amp\run(function () use ($serialHandle) {
 	});
 	$writeWatcher = Amp\onWritable($serialHandle, function($watcherId, $handle) use(&$outbuffer, &$settled) {
 		if (strlen($outbuffer) && $settled) {
-			echo "writable: ";
+			echo "D/Output: ";
 			echo($outbuffer)."\n";
 			fputs($handle, $outbuffer{0});
 			fflush($handle);
@@ -94,7 +94,7 @@ Amp\run(function () use ($serialHandle) {
 				return;
 			}
 			if ($result) {
-				echo "RESERVED JOB: ".$result[0]."\n";
+				echo "I/Job: RESERVED JOB: ".$result[0]."\n";
 			}
 
 			if (!$result) {
@@ -106,7 +106,7 @@ Amp\run(function () use ($serialHandle) {
 				$id = $result[0];
 				$k  = $client->delete($result[0]);
 				$k->when( function($err, $res) use ($client, $id) {
-					echo "DELETING JOB " . $id."\n";
+					echo "I/Job: DELETING JOB: " . $id."\n";
 					var_dump($err);
 					var_dump($res);
 				});
@@ -128,14 +128,27 @@ function incomingSerialData($d, $bnstk) {
 
 	$buffer .= $d;
 	if (strpos($buffer, "\n") !== FALSE) {
-		echo($buffer);
+		echo("D/Buffer: ".$buffer);
 		$obj = json_decode($buffer);
 		if (! $obj ) {
 			$buffer = '';
 		} else{
-			$bnstk->useTube($obj->type)->when(function($err, $rslt) use ($obj, $bnstk, $buffer) {
-				$bnstk->put($buffer);
-			});
+			if ($obj->type == 'display') {
+				//don't pile up jobs for display, write to tmpfs/shm
+				$tmpf = fopen('/dev/shm/display.json', 'w+');
+				if ($tmpf) {
+					fputs ($tmpf, $buffer);
+					fclose($tmpf);
+				}
+			} else {
+				$bnstk->useTube($obj->type)->when(function($err, $rslt) use ($obj, $bnstk, $buffer) {
+					echo("D/Job: use tube " .$obj->type."\n");
+					echo("D/Job: put " .$buffer."\n");
+					$bnstk->put($buffer, 15, 0);
+				});
+			}
 		}
+		$buffer = '';
+		echo("D/Buffer: clear\n");
 	}
 }
