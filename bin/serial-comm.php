@@ -21,7 +21,7 @@ for ($x =0; $x <=10; $x++) {
 }
 if (!$serialPort) {
 	echo "E/Serial: No serial port found at /dev/ttyAMA* nor /dev/ttyUSB*\n";
-	sleep (30);
+	sleep (20);
 	exit();
 }
 
@@ -30,6 +30,8 @@ if (!$serialPort) {
 @$serialHandle = fopen($serialPort, "w+", false);
 if (!$serialHandle) { 
 	echo "E/Serial: cannot open serial port $serialPort for reading and writing.\n";
+	sleep(20);
+	exit();
 }
 
 Amp\run(function () use ($serialHandle) {
