@@ -86,43 +86,79 @@ Amp\run(function () use ($serialHandle, $beanstalkAddress) {
 	Amp\repeat(function() use ($client, &$outbuffer, $writeWatcher){
 
 		try {
-			$promise = $client->reserve(0);
+		//	->when(function()  use($client, &$outbuffer, $writeWatcher) {;
+				$promise = $client->reserve(0);
+				$promise->when( function($error, $result, $cbData) use ($client, &$outbuffer, $writeWatcher) {
+					if ($error instanceOf Amp\Beanstalk\TimedOutException) {
+						return;
+					}
+					if ($error instanceOf Amp\Beanstalk\DeadlineSoonException) {
+						var_dump( get_class($error) );
+						return;
+					}
+					if ($result) {
+						echo "I/Job: RESERVED JOB: ".$result[0]."\n";
+					}
+
+					if (!$result) {
+						return;
+					}
+					var_dump($result[1]);
+					$outbuffer .= $result[1];
+					Amp\enable($writeWatcher);
+					try {
+						$id = $result[0];
+						$k  = $client->delete($result[0]);
+						$k->when( function($err, $res) use ($client, $id) {
+							echo "I/Job: DELETING JOB: " . $id."\n";
+							var_dump($err);
+							var_dump($res);
+						});
+					} catch (Exception $e) {
+						var_dump($e->getMessage());
+					}
+				});
+	//		});
 		} catch (Exception $e) {
 			if ($e instanceOf Amp\Beanstalk\DeadlineSoonException) {
 				var_dump($e->getJob());
 			}
 		}
-		$promise->when( function($error, $result, $cbData) use ($client, &$outbuffer, $writeWatcher) {
-			if ($error instanceOf Amp\Beanstalk\TimedOutException) {
-				return;
-			}
-			if ($error instanceOf Amp\Beanstalk\DeadlineSoonException) {
-				var_dump( get_class($error) );
-				return;
-			}
-			if ($result) {
-				echo "I/Job: RESERVED JOB: ".$result[0]."\n";
-			}
 
-			if (!$result) {
-				return;
-			}
-			$outbuffer .= $result[1];
-			Amp\enable($writeWatcher);
-			try {
-				$id = $result[0];
-				$k  = $client->delete($result[0]);
-				$k->when( function($err, $res) use ($client, $id) {
-					echo "I/Job: DELETING JOB: " . $id."\n";
-					var_dump($err);
-					var_dump($res);
-				});
-			} catch (Exception $e) {
-				var_dump($e->getMessage());
-			}
-		});
 	}, $msInterval=50);
 
+	//clean up stale display messages
+	//so that only display messages less than 5 seconds old are available
+	Amp\repeat(function() use ($beanstalkAddress){
+		echo("D/Cleanup display queue\n");
+
+		//we need a new client beause reserve checks all watched tubes
+		//and we don't want to get into locking one tube vs another
+		$client = new Amp\Beanstalk\BeanstalkClient($beanstalkAddress);
+		$client->watch("display")->when(function($err, $rslt) use ($client) {
+			echo "D/Queue watching display bucket.\n";
+			$lastid=0;
+			Amp\repeat(function() use ($client, $lastid){
+			$client->reserve(0)->when( function($error, $result, $cbData) use ($client, &$lastid) {
+				if ($error) { $client->close(); return; }
+				$info = $client->statsJob($result[0]);
+				$info->when(function($error, $result, $cb) use($client) {
+					$lines = explode("\n", $result);
+					array_shift($lines);
+
+					$stats = parse_ini_string( str_replace(": ", "=", implode("\n", $lines)) ); 
+					if (empty($stats)) {
+						return;
+					}
+					if (intval($stats['age']) > 5) {
+						$k  = $client->delete($stats['id']);
+						echo "D/cleanup deleted stale job ".$stats['id']."\n";
+					}
+				});
+			});
+			}, $msInterval=50);
+		});
+	}, $msInterval=10000);
 });
 
 function incomingSerialData($d, $bnstk) {
@@ -140,6 +176,7 @@ function incomingSerialData($d, $bnstk) {
 		if (! $obj ) {
 			$buffer = '';
 		} else{
+			/*
 			if ($obj->type == 'display') {
 				//don't pile up jobs for display, write to tmpfs/shm
 				$tmpf = fopen('/dev/shm/display.json', 'w+');
@@ -148,12 +185,13 @@ function incomingSerialData($d, $bnstk) {
 					fclose($tmpf);
 				}
 			} else {
+			 */
 				$bnstk->useTube($obj->type)->when(function($err, $rslt) use ($obj, $bnstk, $buffer) {
 					echo("D/Job: use tube " .$obj->type."\n");
 					echo("D/Job: put " .$buffer."\n");
 					$bnstk->put($buffer, 15, 0);
 				});
-			}
+//			}
 		}
 		$buffer = '';
 		echo("D/Buffer: clear\n");
