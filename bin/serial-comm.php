@@ -34,10 +34,15 @@ if (!$serialHandle) {
 	exit();
 }
 
-Amp\run(function () use ($serialHandle) {
+$beanstalkAddress = getenv('BEANSTALK_ADDRESS');
+if ($beanstalkAddress == '') {
+	        $beanstalkAddress = '127.0.0.1:11300';
+}
+
+Amp\run(function () use ($serialHandle, $beanstalkAddress) {
 	$outbuffer = '';
 	$settled   = FALSE;
-	$client = new Amp\Beanstalk\BeanstalkClient('127.0.0.1:11300');
+	$client = new Amp\Beanstalk\BeanstalkClient($beanstalkAddress);
 
 /*
 	$prom1 = $client->useTube('error');
