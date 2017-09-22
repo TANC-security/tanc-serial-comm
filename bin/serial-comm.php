@@ -36,35 +36,68 @@ if (!$serialHandle) {
 
 $beanstalkAddress = getenv('BEANSTALK_ADDRESS');
 if ($beanstalkAddress == '') {
-	        $beanstalkAddress = '127.0.0.1:11300';
+        $beanstalkAddress = '127.0.0.1:11300';
 }
 
-Amp\run(function () use ($serialHandle, $beanstalkAddress) {
+$beanstalkAddress = 'tcp://'.$beanstalkAddress.'?tube=display';
+
+$client = new Amp\Beanstalk\BeanstalkClient($beanstalkAddress);
+
+
+class LocalBeanstalkClient extends \Amp\Beanstalk\BeanstalkClient { 
+
+    public function statsJob(int $id): \Amp\Promise { 
+        $payload = "stats-job $id\r\n";
+        return $this->mysend($payload, function (array $response): array { 
+            list($type) = $response;
+
+            var_dump($response);
+            switch ($type) { 
+                case "OK":
+                    return $response[1];
+
+                case "NOT_FOUND":
+                    return false;
+
+                default:
+                    throw new BeanstalkException("Unknown response: " . $type);
+            }
+        });
+    } 
+
+    protected function mysend(string $message, callable $transform = null): \Amp\Promise { 
+        return \Amp\call(function () use ($message, $transform) { 
+            $this->deferreds[] = $deferred = new Deferred;
+            $promise = $deferred->promise();
+
+            yield $this->connection->send($message);
+            $response = yield $promise;
+
+            return $transform ? $transform($response) : $response;
+        });
+    } 
+}
+
+use Amp\Loop;
+
+Loop::run(function () use ($serialHandle, $client, $beanstalkAddress) {
 	$outbuffer = '';
 	$settled   = FALSE;
-	$client = new Amp\Beanstalk\BeanstalkClient($beanstalkAddress);
 
-/*
-	$prom1 = $client->useTube('error');
-	$prom2 = $client->put('big ol error');
-
-	$prom1 = $client->useTube('input');
-	$prom2 = $client->put('12341');
-	*/
-
-	Amp\onReadable($serialHandle, function($watcherId, $handle) use ($client) {
+	Loop::onReadable($serialHandle, function($watcherId, $handle) use ($client) {
 		$data = fgets($handle, 4096);
 
 
 		if ($data == '') {
 			if ( !is_resource($handle) || @feof($handle) ) {
-				Amp\cancel($watcherId);
+				Loop::cancel($watcherId);
 			}
 		} else {
 			incomingSerialData($data, $client);
 		}
 	});
-	$writeWatcher = Amp\onWritable($serialHandle, function($watcherId, $handle) use(&$outbuffer, &$settled) {
+
+	$writeWatcher = Loop::onWritable($serialHandle, function($watcherId, $handle) use(&$outbuffer, &$settled) {
 		if (strlen($outbuffer) && $settled) {
 			echo "D/Output: ";
 			echo($outbuffer)."\n";
@@ -73,22 +106,24 @@ Amp\run(function () use ($serialHandle, $beanstalkAddress) {
 			usleep(200);
 			$outbuffer = substr($outbuffer, 1);
 		} else {
-			Amp\disable($watcherId);
+			Loop::disable($watcherId);
 		}
 	});
-	Amp\disable($writeWatcher);
-	Amp\once(function() use ($writeWatcher, &$settled) {
+	Loop::disable($writeWatcher);
+	Loop::delay($msDelay=4000,
+	    function() use ($writeWatcher, &$settled) {
 		$settled = TRUE;
-		Amp\enable($writeWatcher);
-	}, $msDelay = 4000);
+		Loop::enable($writeWatcher);
+	});
 
 	$client->watch('input');
-	Amp\repeat(function() use ($client, &$outbuffer, $writeWatcher){
+	Loop::repeat(
+	    $msInterval=50,
+	    function() use ($client, &$outbuffer, $writeWatcher){
 
 		try {
-		//	->when(function()  use($client, &$outbuffer, $writeWatcher) {;
 				$promise = $client->reserve(0);
-				$promise->when( function($error, $result, $cbData) use ($client, &$outbuffer, $writeWatcher) {
+				$promise->onResolve( function($error, $result) use ($client, &$outbuffer, $writeWatcher) {
 					if ($error instanceOf Amp\Beanstalk\TimedOutException) {
 						return;
 					}
@@ -105,11 +140,11 @@ Amp\run(function () use ($serialHandle, $beanstalkAddress) {
 					}
 					var_dump($result[1]);
 					$outbuffer .= $result[1];
-					Amp\enable($writeWatcher);
+					Loop::enable($writeWatcher);
 					try {
 						$id = $result[0];
 						$k  = $client->delete($result[0]);
-						$k->when( function($err, $res) use ($client, $id) {
+						$k->onResolve( function($err, $res) use ($client, $id) {
 							echo "I/Job: DELETING JOB: " . $id."\n";
 							var_dump($err);
 							var_dump($res);
@@ -125,24 +160,28 @@ Amp\run(function () use ($serialHandle, $beanstalkAddress) {
 			}
 		}
 
-	}, $msInterval=50);
+	});
 
 	//clean up stale display messages
 	//so that only display messages less than 5 seconds old are available
-	Amp\repeat(function() use ($beanstalkAddress){
+	//TODO: add statsJob to official beanstalkClient
+	Loop::repeat($msInterval=10000,
+		function() use ($beanstalkAddress){
 		echo("D/Cleanup display queue\n");
 
 		//we need a new client beause reserve checks all watched tubes
 		//and we don't want to get into locking one tube vs another
-		$client = new Amp\Beanstalk\BeanstalkClient($beanstalkAddress);
-		$client->watch("display")->when(function($err, $rslt) use ($client) {
+		$client = new \LocalBeanstalkClient($beanstalkAddress);
+		$client->watch("display")->onResolve(function($err, $rslt) use ($client) {
 			echo "D/Queue watching display bucket.\n";
 			$lastid=0;
-			Amp\repeat(function() use ($client, $lastid){
-			$client->reserve(0)->when( function($error, $result, $cbData) use ($client, &$lastid) {
-				if ($error) { $client->close(); return; }
+			Loop::repeat(
+			  $msInterval=50,
+			  function() use ($client, $lastid){
+				$client->reserve(0)->onResolve( function($error, $result) use ($client, &$lastid) {
+				if ($error) { $client = null; return; }
 				$info = $client->statsJob($result[0]);
-				$info->when(function($error, $result, $cb) use($client) {
+				$info->onResolve(function($error, $result) use($client) {
 					$lines = explode("\n", $result);
 					array_shift($lines);
 
@@ -156,9 +195,9 @@ Amp\run(function () use ($serialHandle, $beanstalkAddress) {
 					}
 				});
 			});
-			}, $msInterval=50);
+			});
 		});
-	}, $msInterval=10000);
+	});
 });
 
 function incomingSerialData($d, $bnstk) {
@@ -186,10 +225,16 @@ function incomingSerialData($d, $bnstk) {
 				}
 			} else {
 			 */
-				$bnstk->useTube($obj->type)->when(function($err, $rslt) use ($obj, $bnstk, $buffer) {
+				$bnstk->use($obj->type)->onResolve(function($err, $rslt) use ($obj, $bnstk, $buffer) {
 					echo("D/Job: use tube " .$obj->type."\n");
 					echo("D/Job: put " .$buffer."\n");
-					$bnstk->put($buffer, 15, 0);
+					$bnstk->put($buffer, 15, 0, 10)->onResolve(function($err, $rslt) {
+if ($err) {
+					echo("E/Job: PUT HAD ERRORS \n");
+echo $err."\n";
+}
+					echo("D/Job: put is done \n");
+					});
 				});
 //			}
 		}
@@ -197,3 +242,5 @@ function incomingSerialData($d, $bnstk) {
 		echo("D/Buffer: clear\n");
 	}
 }
+
+
