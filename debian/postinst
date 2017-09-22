@@ -1,2 +1,3 @@
 #!/bin/bash
 systemctl enable /opt/tanc/systemd/tanc-serial-comm.service
+systemctl restart tanc-serial-comm
