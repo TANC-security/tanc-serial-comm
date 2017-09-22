@@ -1,2 +1,2 @@
 #!/bin/bash
-systemctl enable /opt/tanc/systemd/serial-comm.service
+systemctl enable /opt/tanc/systemd/tanc-serial-comm.service
