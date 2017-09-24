@@ -44,14 +44,13 @@ $beanstalkAddress = 'tcp://'.$beanstalkAddress.'?tube=display';
 $client = new Amp\Beanstalk\BeanstalkClient($beanstalkAddress);
 
 
-class LocalBeanstalkClient extends \Amp\Beanstalk\BeanstalkClient { 
+class LocalBeanstalkClient extends \Amp\Beanstalk\BeanstalkClient {
 
     public function statsJob(int $id): \Amp\Promise {
         $payload = "stats-job $id\r\n";
         return $this->mysend($payload, function (array $response) {
             list($type) = $response;
 
-            var_dump($response);
             switch ($type) { 
                 case "OK":
                     return $response[1];
@@ -118,7 +117,7 @@ Loop::run(function () use ($serialHandle, $client, $beanstalkAddress) {
 
 	$client->watch('input');
 	Loop::repeat(
-	    $msInterval=50,
+	    $msInterval=2000,
 	    function() use ($client, &$outbuffer, $writeWatcher){
 
 		try {
@@ -163,7 +162,7 @@ Loop::run(function () use ($serialHandle, $client, $beanstalkAddress) {
 	});
 
 	//clean up stale display messages
-	//so that only display messages less than 5 seconds old are available
+	//so that only display messages less than 10 seconds old are available
 	//TODO: add statsJob to official beanstalkClient
 	Loop::delay($msInterval=10000,
 		function() use ($beanstalkAddress){
@@ -179,18 +178,28 @@ Loop::run(function () use ($serialHandle, $client, $beanstalkAddress) {
 			  $msInterval=1000,
 			  function() use ($client, $lastid){
 				$client->reserve(0)->onResolve( function($error, $result) use ($client, &$lastid) {
+				if ($error) { $client = null; return; }
+				if (!$result) { $client = null; echo "D/Cleanup no jobs, closing.\n"; return; }
+
 				$info = $client->statsJob($result[0]);
 				$info->onResolve(function($error, $result) use($client) {
+					if ($error) {
+						$client->release($stats['id'], 0, 1024);
+					}
 					$lines = explode("\n", $result);
 					array_shift($lines);
 
 					$stats = parse_ini_string( str_replace(": ", "=", implode("\n", $lines)) ); 
 					if (empty($stats)) {
+						echo("E/Cleanup didn't find job status.\n");
+						$client->release($stats['id'], 0, 1024);
 						return;
 					}
-					if (intval($stats['age']) > 5) {
+					if (intval($stats['age']) > 10) {
 						$k  = $client->delete($stats['id']);
 						echo "D/cleanup deleted stale job ".$stats['id']."\n";
+					} else {
+						$client->release($stats['id'], 0, 1024);
 					}
 				});
 			});
