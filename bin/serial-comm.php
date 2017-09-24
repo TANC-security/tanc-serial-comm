@@ -165,7 +165,7 @@ Loop::run(function () use ($serialHandle, $client, $beanstalkAddress) {
 	//clean up stale display messages
 	//so that only display messages less than 5 seconds old are available
 	//TODO: add statsJob to official beanstalkClient
-	Loop::repeat($msInterval=10000,
+	Loop::delay($msInterval=10000,
 		function() use ($beanstalkAddress){
 		echo("D/Cleanup display queue\n");
 
@@ -176,10 +176,9 @@ Loop::run(function () use ($serialHandle, $client, $beanstalkAddress) {
 			echo "D/Queue watching display bucket.\n";
 			$lastid=0;
 			Loop::repeat(
-			  $msInterval=50,
+			  $msInterval=1000,
 			  function() use ($client, $lastid){
 				$client->reserve(0)->onResolve( function($error, $result) use ($client, &$lastid) {
-				if ($error) { $client = null; return; }
 				$info = $client->statsJob($result[0]);
 				$info->onResolve(function($error, $result) use($client) {
 					$lines = explode("\n", $result);
