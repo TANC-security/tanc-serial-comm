@@ -46,9 +46,9 @@ $client = new Amp\Beanstalk\BeanstalkClient($beanstalkAddress);
 
 class LocalBeanstalkClient extends \Amp\Beanstalk\BeanstalkClient { 
 
-    public function statsJob(int $id): \Amp\Promise { 
+    public function statsJob(int $id): \Amp\Promise {
         $payload = "stats-job $id\r\n";
-        return $this->mysend($payload, function (array $response): array { 
+        return $this->mysend($payload, function (array $response) {
             list($type) = $response;
 
             var_dump($response);
@@ -67,7 +67,7 @@ class LocalBeanstalkClient extends \Amp\Beanstalk\BeanstalkClient {
 
     protected function mysend(string $message, callable $transform = null): \Amp\Promise { 
         return \Amp\call(function () use ($message, $transform) { 
-            $this->deferreds[] = $deferred = new Deferred;
+            $this->deferreds[] = $deferred = new \Amp\Deferred;
             $promise = $deferred->promise();
 
             yield $this->connection->send($message);
