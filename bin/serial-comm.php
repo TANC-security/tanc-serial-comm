@@ -223,7 +223,7 @@ function incomingSerialData($d, $bnstk) {
 	if (strpos($buffer, "\n") !== FALSE) {
 		echo("D/Buffer: ".$buffer);
 		$obj = json_decode($buffer);
-		if (! $obj ) {
+		if (! $obj || !is_object($obj) ) {
 			$buffer = '';
 		} else{
 			/*
