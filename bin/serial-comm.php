@@ -170,7 +170,7 @@ Loop::run(function () use ($serialHandle, $client, $beanstalkAddress) {
 
 		//we need a new client beause reserve checks all watched tubes
 		//and we don't want to get into locking one tube vs another
-		$client = new \LocalBeanstalkClient($beanstalkAddress);
+		$client = new \Amp\Beanstalk\BeanstalkClient($beanstalkAddress);
 		$client->watch("display")->onResolve(function($err, $rslt) use ($client) {
 			echo "D/Queue watching display bucket.\n";
 			$lastid=0;
@@ -181,15 +181,18 @@ Loop::run(function () use ($serialHandle, $client, $beanstalkAddress) {
 				if ($error) { $client = null; return; }
 				if (!$result) { $client = null; echo "D/Cleanup no jobs, closing.\n"; return; }
 
-				$info = $client->statsJob($result[0]);
+				$info = $client->getJobStats($result[0]);
 				$info->onResolve(function($error, $result) use($client) {
 					if ($error) {
 						$client->release($stats['id'], 0, 1024);
 					}
+					/*
 					$lines = explode("\n", $result);
 					array_shift($lines);
 
 					$stats = parse_ini_string( str_replace(": ", "=", implode("\n", $lines)) ); 
+					 */
+					$stats = get_object_vars($result);
 					if (empty($stats)) {
 						echo("E/Cleanup didn't find job status.\n");
 						$client->release($stats['id'], 0, 1024);
