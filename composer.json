@@ -9,6 +9,6 @@
     },
     "require": {
         "amphp/beanstalk": "dev-master",
-		"amphp/amp": ">=2.0.0"
+		"amphp/amp": "^2.0.0"
     }
 }
