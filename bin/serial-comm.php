@@ -79,11 +79,11 @@ class LocalBeanstalkClient extends \Amp\Beanstalk\BeanstalkClient {
 
 use Amp\Loop;
 
-Loop::run(function () use ($serialHandle, $client, $beanstalkAddress) {
+Loop::run(function () use ($serialHandle, &$client, $beanstalkAddress) {
 	$outbuffer = '';
 	$settled   = FALSE;
 
-	Loop::onReadable($serialHandle, function($watcherId, $handle) use ($client) {
+	Loop::onReadable($serialHandle, function($watcherId, $handle) use (&$client) {
 		$data = fgets($handle, 4096);
 
 
@@ -92,7 +92,7 @@ Loop::run(function () use ($serialHandle, $client, $beanstalkAddress) {
 				Loop::cancel($watcherId);
 			}
 		} else {
-			incomingSerialData($data, $client);
+			incomingSerialData($data, $client, $watcherId);
 		}
 	});
 
@@ -177,8 +177,13 @@ Loop::run(function () use ($serialHandle, $client, $beanstalkAddress) {
 			Loop::repeat(
 			  $msInterval=1000,
 			  function() use ($client, $lastid){
-				$client->reserve(0)->onResolve( function($error, $result) use ($client, &$lastid) {
-				if ($error) { $client = null; return; }
+				$client->reserve(1)->onResolve( function($error, $result) use ($client, &$lastid) {
+				//no jobs reserved within timeout
+				if ($error instanceOf Amp\Beanstalk\TimedOutException) {
+					return;
+				}
+
+				if ($error) { echo "E/Clean got error: ".$error."\n"; /*$client = null;*/ return; }
 				if (!$result) { $client = null; echo "D/Cleanup no jobs, closing.\n"; return; }
 
 				$info = $client->getJobStats($result[0]);
@@ -211,47 +216,66 @@ Loop::run(function () use ($serialHandle, $client, $beanstalkAddress) {
 	});
 });
 
-function incomingSerialData($d, $bnstk) {
+function incomingSerialData($d, &$bnstk, &$watcherId) {
 	static $buffer = '';
-	if (!trim($d)) {
+	/*
+	if (trim($d)) {
 		//blank newline
 		$buffer = '';
 		return;
 	}
+	 */
 
 	$buffer .= $d;
-	if (strpos($buffer, "\n") !== FALSE) {
-		echo("D/Buffer: ".$buffer);
-		$obj = json_decode($buffer);
-		if (! $obj || !is_object($obj) ) {
-			$buffer = '';
-		} else{
-			/*
-			if ($obj->type == 'display') {
-				//don't pile up jobs for display, write to tmpfs/shm
-				$tmpf = fopen('/dev/shm/display.json', 'w+');
-				if ($tmpf) {
-					fputs ($tmpf, $buffer);
-					fclose($tmpf);
-				}
-			} else {
-			 */
-				$bnstk->use($obj->type)->onResolve(function($err, $rslt) use ($obj, $bnstk, $buffer) {
-					echo("D/Job: use tube " .$obj->type."\n");
-					echo("D/Job: put " .$buffer."\n");
-					$bnstk->put($buffer, 15, 0, 10)->onResolve(function($err, $rslt) {
-if ($err) {
-					echo("E/Job: PUT HAD ERRORS \n");
-echo $err."\n";
-}
-					echo("D/Job: put is done \n");
-					});
-				});
-//			}
-		}
-		$buffer = '';
-		echo("D/Buffer: clear\n");
+	if (strpos($buffer, "\n") === FALSE) {
+		return;
 	}
+	//echo("D/Buffer: ".$buffer);
+	$obj = json_decode(trim($buffer));
+	$buffer = '';
+
+
+	if (! $obj || !is_object($obj) ) {
+		echo( "E/Buffer: not an object\n");
+		return;
+	}
+
+	//we don't want anymore data buffered until the tube is
+	//changed and the put is done
+	Loop::disable($watcherId);
+	//*
+	$bnstk->use($obj->type)->onResolve(function($err, $rslt) use ($obj, $bnstk, $obj) {
+		echo("D/Job: use tube " .$obj->type."\n");
+		if ($err) {
+		echo $err."\n";
+		}
+
+		echo("D/Job: put " .json_encode($obj)."\n");
+	});
+	$promise = $bnstk->put(json_encode($obj), 15, 0, 10);
+	$promise->onResolve(function($err, $rslt) use (&$watcherId) {
+		if ($err) {
+		echo $err."\n";
+		}
+		echo("D/Job: put is done \n");
+		Loop::enable($watcherId);
+	});
+	 //*/
+
+	/*
+		echo("D/Job: use tube " .$obj->type."\n");
+		$promise = $bnstk->use($obj->type);
+		$promise->onResolve(function($err, $rslt) use ($obj, $bnstk, $obj) {
+			echo("D/Job: put " .json_encode($obj)."\n");
+			$bnstk->put(json_encode($obj), 15, 0, 10)->onResolve(function($err, $rslt) {
+				if ($err) {
+				echo "E/Job: ".$err."\n";
+				}
+			echo("D/Job: put is done \n");
+			});
+		});
+		Amp\Promise\wait($promise);
+	 */
 }
 
 
