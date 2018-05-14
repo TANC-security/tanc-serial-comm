@@ -6,33 +6,8 @@ ob_implicit_flush(true);
 
 include_once(dirname(__DIR__).'/serial-comm/vendor/autoload.php');
 
-$amaPort = '/dev/ttyAMA';
-$usbPort = '/dev/ttyUSB';
-$serialPort = FALSE;
-for ($x =0; $x <=10; $x++) {
-	if (file_exists($amaPort.$x)) {
-		$serialPort = $amaPort.$x;
-		break;
-	}
-	if (file_exists($usbPort.$x)) {
-		$serialPort = $usbPort.$x;
-		break;
-	}
-}
-if (!$serialPort) {
-	echo "E/Serial: No serial port found at /dev/ttyAMA* nor /dev/ttyUSB*\n";
-	sleep (20);
-	exit();
-}
 
-`stty -F $serialPort cs8 115200 ignbrk -brkint -imaxbel -opost -onlcr -isig -icanon -iexten -echo -echoe -echok -echoctl -echoke noflsh -ixon -crtscts`;
 
-@$serialHandle = fopen($serialPort, "w+", false);
-if (!$serialHandle) { 
-	echo "E/Serial: cannot open serial port $serialPort for reading and writing.\n";
-	sleep(20);
-	exit();
-}
 
 $beanstalkAddress = getenv('BEANSTALK_ADDRESS');
 if ($beanstalkAddress == '') {
@@ -43,6 +18,7 @@ $beanstalkAddress = 'tcp://'.$beanstalkAddress.'?tube=display';
 
 $client = new Amp\Beanstalk\BeanstalkClient($beanstalkAddress);
 
+$serialHandle = openSerialPort();
 
 class LocalBeanstalkClient extends \Amp\Beanstalk\BeanstalkClient {
 
@@ -279,3 +255,33 @@ function incomingSerialData($d, &$bnstk, &$watcherId) {
 }
 
 
+function openSerialPort() {
+	$amaPort = '/dev/ttyAMA';
+	$usbPort = '/dev/ttyUSB';
+	$serialPort = FALSE;
+	for ($x =0; $x <=10; $x++) {
+		if (file_exists($amaPort.$x)) {
+			$serialPort = $amaPort.$x;
+			break;
+		}
+		if (file_exists($usbPort.$x)) {
+			$serialPort = $usbPort.$x;
+			break;
+		}
+	}
+	if (!$serialPort) {
+		echo "E/Serial: No serial port found at /dev/ttyAMA* nor /dev/ttyUSB*\n";
+		sleep (20);
+		exit();
+	}
+
+	`stty -F $serialPort cs8 115200 ignbrk -brkint -imaxbel -opost -onlcr -isig -icanon -iexten -echo -echoe -echok -echoctl -echoke noflsh -ixon -crtscts`;
+
+	@$serialHandle = fopen($serialPort, "w+", false);
+	if (!$serialHandle) {
+		echo "E/Serial: cannot open serial port $serialPort for reading and writing.\n";
+		sleep(20);
+		exit();
+	}
+	return $serialHandle;
+}
