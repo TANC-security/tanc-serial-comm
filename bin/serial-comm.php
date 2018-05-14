@@ -134,7 +134,7 @@ Loop::run(function () use ($serialHandle, &$client, $beanstalkAddress) {
 						echo "I/Job: RESERVED JOB: ".$result[0]."\n";
 					}
 
-					if (!$result) {
+					if (!strlen($result)) {
 						return;
 					}
 					var_dump($result[1]);
