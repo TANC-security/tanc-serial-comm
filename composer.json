@@ -8,6 +8,7 @@
         "vendor-dir": "serial-comm/vendor"
     },
     "require": {
+        "markkimsal/amphp-mqtt": "dev-master",
         "amphp/beanstalk": "dev-master",
 		"amphp/amp": "^2.0.0"
     }
