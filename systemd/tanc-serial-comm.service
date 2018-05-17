@@ -1,5 +1,5 @@
 [Unit]
-Description=TANC Serial Queue Service
+Description=TANC Serial to MQTT Gateway
 After=multi-user.target
 
 [Service]
@@ -7,7 +7,7 @@ Type=idle
 User=pi
 Group=users
 WorkingDirectory=/opt/tanc/
-ExecStart=/usr/bin/php /opt/tanc/bin/serial-comm.php
+ExecStart=/usr/bin/php /opt/tanc/bin/serial-mqtt-gateway.php
 Restart=on-failure
 
 [Install]
