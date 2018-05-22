@@ -18,7 +18,11 @@ if ($topicPrefix == '') {
 	$topicPrefix = 'security/';
 }
 
-$mqttAddress = 'tcp://'.$mqttAddress.'?topics=security/input';
+$server = parse_url($mqttAddress);
+if (!array_key_exists('scheme', $server)) {
+	$mqttAddress = 'tcp://'.$mqttAddress;
+}
+$mqttAddress .= '?topics=security/input';
 
 $client = new \MarkKimsal\Mqtt\Client($mqttAddress);
 $client->connect();
