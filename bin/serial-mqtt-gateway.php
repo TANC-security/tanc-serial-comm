@@ -22,18 +22,18 @@ $server = parse_url($mqttAddress);
 if (!array_key_exists('scheme', $server)) {
 	$mqttAddress = 'tcp://'.$mqttAddress;
 }
-$mqttAddress .= '?topics=security/input';
+$mqttAddress .= '?topics='.$topicPrefix.'input';
 
 $client = new \MarkKimsal\Mqtt\Client($mqttAddress);
 $client->connect();
 
-$serialHandle = openSerialPort();
-
 use Amp\Loop;
 
-Loop::run(function () use ($serialHandle, &$client, $mqttAddress, $topicPrefix) {
-	$outbuffer = '';
-	$settled   = FALSE;
+Loop::run(function () use (&$client, $mqttAddress, $topicPrefix) {
+
+	$serialHandle = openSerialPort();
+	$outbuffer    = '';
+	$settled      = FALSE;
 
 	Loop::onReadable($serialHandle, function($watcherId, $handle) use (&$client, $topicPrefix) {
 		$data = fgets($handle, 4096);
@@ -48,11 +48,16 @@ Loop::run(function () use ($serialHandle, &$client, $mqttAddress, $topicPrefix) 
 		}
 	});
 
-	$writeWatcher = Loop::onWritable($serialHandle, function($watcherId, $handle) use(&$outbuffer, &$settled) {
+	$writeWatcher = Loop::onWritable($serialHandle, function($watcherId, &$handle) use(&$outbuffer, &$settled) {
+
 		if (strlen($outbuffer) && $settled) {
-//			echo "D/Output: ";
-//			echo($outbuffer)."\n";
-			fputs($handle, $outbuffer{0});
+			$written = fputs($handle, $outbuffer{0});
+			if (!$written) {
+				echo "wrote $written bytes ...\n";
+				Loop::disable($watcherId);
+				//should exit so watchdog can restart
+				exit();
+			}
 			fflush($handle);
 			usleep(200);
 			$outbuffer = substr($outbuffer, 1);
@@ -97,11 +102,8 @@ Loop::run(function () use ($serialHandle, &$client, $mqttAddress, $topicPrefix) 
 				var_dump($e->getMessage());
 			}
 		} catch (Exception $e) {
-			if ($e instanceOf Amp\Beanstalk\DeadlineSoonException) {
-				var_dump($e->getJob());
-			}
+			var_dump($e->getMessage());
 		}
-
 	});
 });
 
@@ -164,7 +166,7 @@ function openSerialPort() {
 	}
 	if (!$serialPort) {
 		echo "E/Serial: No serial port found at /dev/ttyAMA* nor /dev/ttyUSB*\n";
-		sleep (20);
+		sleep (2);
 		exit();
 	}
 
@@ -173,7 +175,7 @@ function openSerialPort() {
 	@$serialHandle = fopen($serialPort, "w+", false);
 	if (!$serialHandle) { 
 		echo "E/Serial: cannot open serial port $serialPort for reading and writing.\n";
-		sleep(20);
+		sleep(2);
 		exit();
 	}
 	return $serialHandle;
